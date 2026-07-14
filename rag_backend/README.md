@@ -1,6 +1,6 @@
 # AskMyPdf
 
-A production-shaped FastAPI RAG service for asking questions about PDF documents.
+A FastAPI RAG service for asking questions about PDF documents.
 
 ## Project Structure
 
