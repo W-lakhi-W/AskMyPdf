@@ -1,0 +1,10 @@
+.env
+.git
+.agents
+venv
+.venv
+__pycache__
+*.pyc
+data/uploads
+data/vectorstores
+*.pdf

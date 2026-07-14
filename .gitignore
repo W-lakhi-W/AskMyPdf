@@ -1,0 +1,64 @@
+# -------------------------
+# Logs
+# -------------------------
+*.log
+*.err.log
+
+# -------------------------
+# Environment variables
+# -------------------------
+.env
+.env.*
+
+# -------------------------
+# Python
+# -------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# -------------------------
+# Database
+# -------------------------
+*.db
+
+# -------------------------
+# React / Node
+# -------------------------
+node_modules/
+dist/
+build/
+
+# -------------------------
+# TypeScript
+# -------------------------
+*.tsbuildinfo
+
+# -------------------------
+# VS Code / IDE
+# -------------------------
+.vscode/
+.idea/
+
+# -------------------------
+# Operating System
+# -------------------------
+.DS_Store
+Thumbs.db
+
+# -------------------------
+# ChromaDB / Vector DB
+# (uncomment if you don't want to commit embeddings)
+# -------------------------
+# chroma_db/
+# vector_db/
+
+# -------------------------
+# Uploaded PDFs
+# (uncomment if users upload PDFs here)
+# -------------------------
+# data/documents/*
+# !data/documents/.gitkeep
