@@ -218,9 +218,9 @@ Chat Interface
 ![Page](./Screenshots/Chat_interface.png)
 
 Pdf Uploading Interface
-![Page](./screenshots/Pdf_upload.png)
+![Page](./Screenshots/Pdf_upload.png)
 
 Documents
-![Page](./screenshots/Documents.png)
+![Page](./Screenshots/Documents.png)
 
 
