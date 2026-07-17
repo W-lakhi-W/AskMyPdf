@@ -3,83 +3,56 @@ import {
   chat,
   createChatSession,
   DEFAULT_USER_ID,
-  getChatSession,
+  getChatSession
 } from "@/lib/api";
 import {
   CHAT_SESSION_CHANGED_EVENT,
-  type ChatSessionChangedDetail,
   getStoredChatSessionId,
   notifyChatSessionsRefresh,
   removeStoredChatSessionId,
-  setStoredChatSessionId,
+  setStoredChatSessionId
 } from "@/lib/chatSessions";
-import type { ChatResponse, Source } from "@/types/api";
-
-export type ChatRole = "user" | "assistant";
-
-export type ChatMessage = {
-  id: string;
-  role: ChatRole;
-  content: string;
-  timestamp: string;
-  status?: "default" | "error";
-};
-
 function createId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
-
-function formatTimestamp(date = new Date()) {
+function formatTimestamp(date = /* @__PURE__ */ new Date()) {
   return date.toLocaleTimeString([], {
     hour: "numeric",
-    minute: "2-digit",
+    minute: "2-digit"
   });
 }
-
-function formatMessageTimestamp(timestamp?: string) {
+function formatMessageTimestamp(timestamp) {
   if (!timestamp) {
     return formatTimestamp();
   }
-
   const date = new Date(timestamp);
   return Number.isNaN(date.getTime()) ? timestamp : formatTimestamp(date);
 }
+function formatSources(sources = []) {
+  const sourceLabels = sources.map((source) => {
+    const name = source.source ?? "unknown source";
+    return source.page ? `${name}, page ${source.page}` : name;
+  }).filter(Boolean);
+  return sourceLabels.length ? `
 
-function formatSources(sources: Source[] = []) {
-  const sourceLabels = sources
-    .map((source) => {
-      const name = source.source ?? "unknown source";
-      return source.page ? `${name}, page ${source.page}` : name;
-    })
-    .filter(Boolean);
-
-  return sourceLabels.length ? `\n\nSources: ${sourceLabels.join(", ")}` : "";
+Sources: ${sourceLabels.join(", ")}` : "";
 }
-
-function getAnswer(response: ChatResponse) {
-  return (
-    response.answer ??
-    response.results ??
-    response.response ??
-    "I could not find an answer for that question."
-  );
+function getAnswer(response) {
+  return response.answer ?? response.results ?? response.response ?? "I could not find an answer for that question.";
 }
-
-function formatAssistantContent(response: ChatResponse) {
+function formatAssistantContent(response) {
   return `${getAnswer(response)}${formatSources(response.sources ?? [])}`;
 }
-
-export function useChatSession() {
+function useChatSession() {
   const userId = useMemo(() => DEFAULT_USER_ID, []);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [sessionId, setSessionId] = useState(null);
+  const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [isLoadingSession, setIsLoadingSession] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
+  const [error, setError] = useState(null);
   const loadSession = useCallback(
-    async (nextSessionId: string) => {
+    async (nextSessionId) => {
       setIsLoadingSession(true);
       setError(null);
       const session = await getChatSession(nextSessionId, userId);
@@ -91,14 +64,13 @@ export function useChatSession() {
           id: String(message.id),
           role: message.role,
           content: message.content,
-          timestamp: formatMessageTimestamp(message.timestamp),
-        })),
+          timestamp: formatMessageTimestamp(message.timestamp)
+        }))
       );
       setIsLoadingSession(false);
     },
-    [userId],
+    [userId]
   );
-
   const startNewChat = useCallback(() => {
     removeStoredChatSessionId(userId);
     setSessionId(null);
@@ -108,117 +80,96 @@ export function useChatSession() {
     setIsTyping(false);
     setIsLoadingSession(false);
   }, [userId]);
-
   const ensureSession = useCallback(
-    async (firstQuestion: string) => {
+    async (firstQuestion) => {
       if (sessionId) {
         return sessionId;
       }
-
       const session = await createChatSession({
         user_id: userId,
-        title: firstQuestion.slice(0, 80) || "New chat",
+        title: firstQuestion.slice(0, 80) || "New chat"
       });
       setStoredChatSessionId(userId, session.session_id);
       setSessionId(session.session_id);
       notifyChatSessionsRefresh();
       return session.session_id;
     },
-    [sessionId, userId],
+    [sessionId, userId]
   );
-
   useEffect(() => {
     const storedSessionId = getStoredChatSessionId(userId);
-
     if (!storedSessionId) {
       setIsLoadingSession(false);
       return;
     }
-
     let isMounted = true;
-    void loadSession(storedSessionId)
-      .catch(() => {
-        removeStoredChatSessionId(userId);
-        if (!isMounted) return;
-        setSessionId(null);
-        setMessages([]);
-      })
-      .finally(() => {
-        if (isMounted) {
-          setIsLoadingSession(false);
-        }
-      });
-
+    void loadSession(storedSessionId).catch(() => {
+      removeStoredChatSessionId(userId);
+      if (!isMounted) return;
+      setSessionId(null);
+      setMessages([]);
+    }).finally(() => {
+      if (isMounted) {
+        setIsLoadingSession(false);
+      }
+    });
     return () => {
       isMounted = false;
     };
   }, [loadSession, userId]);
-
   useEffect(() => {
-    const handleSessionChanged = (event: Event) => {
-      const { sessionId: nextSessionId } = (
-        event as CustomEvent<ChatSessionChangedDetail>
-      ).detail;
-
+    const handleSessionChanged = (event) => {
+      const { sessionId: nextSessionId } = event.detail;
       if (!nextSessionId) {
         startNewChat();
         return;
       }
-
       void loadSession(nextSessionId).catch((err) => {
-        const message =
-          err instanceof Error ? err.message : "Unable to load chat session.";
+        const message = err instanceof Error ? err.message : "Unable to load chat session.";
         setError(message);
         setIsLoadingSession(false);
       });
     };
-
     window.addEventListener(CHAT_SESSION_CHANGED_EVENT, handleSessionChanged);
     return () => {
       window.removeEventListener(
         CHAT_SESSION_CHANGED_EVENT,
-        handleSessionChanged,
+        handleSessionChanged
       );
     };
   }, [loadSession, startNewChat]);
-
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (content) => {
       const trimmed = content.trim();
       if (!trimmed || isTyping || isLoadingSession) {
         return;
       }
-
-      const userMessage: ChatMessage = {
+      const userMessage = {
         id: createId(),
         role: "user",
         content: trimmed,
-        timestamp: formatTimestamp(),
+        timestamp: formatTimestamp()
       };
-
       setMessages((current) => [...current, userMessage]);
       setDraft("");
       setError(null);
       setIsTyping(true);
-
       try {
         const activeSessionId = await ensureSession(trimmed);
         const response = await chat({
           session_id: activeSessionId,
           user_id: userId,
-          question: trimmed,
+          question: trimmed
         });
-        const assistantMessage: ChatMessage = {
+        const assistantMessage = {
           id: createId(),
           role: "assistant",
           content: formatAssistantContent(response),
-          timestamp: formatTimestamp(),
+          timestamp: formatTimestamp()
         };
-
         setMessages((current) => [...current, assistantMessage]);
       } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "The assistant could not reply.";
+        const message = err instanceof Error ? err.message : "The assistant could not reply.";
         setError(message);
         setMessages((current) => [
           ...current,
@@ -227,16 +178,15 @@ export function useChatSession() {
             role: "assistant",
             content: `Error: ${message}`,
             timestamp: formatTimestamp(),
-            status: "error",
-          },
+            status: "error"
+          }
         ]);
       } finally {
         setIsTyping(false);
       }
     },
-    [ensureSession, isLoadingSession, isTyping, userId],
+    [ensureSession, isLoadingSession, isTyping, userId]
   );
-
   return {
     messages,
     draft,
@@ -246,6 +196,9 @@ export function useChatSession() {
     error,
     sessionId,
     userId,
-    sendMessage,
+    sendMessage
   };
 }
+export {
+  useChatSession
+};

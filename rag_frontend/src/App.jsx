@@ -3,7 +3,6 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { ChatPage } from "@/pages/ChatPage";
 import { IngestPage } from "@/pages/IngestPage";
 import { DocumentsPage } from "@/pages/DocumentsPage";
-
 function App() {
   return (
     <BrowserRouter>
@@ -17,5 +16,4 @@ function App() {
     </BrowserRouter>
   );
 }
-
 export default App;

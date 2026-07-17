@@ -1,52 +1,42 @@
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { jsx } from "react/jsx-runtime";
 import { designTokens } from "@/theme/tokens";
-
-type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
-
-type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-  children: ReactNode;
-  variant?: ButtonVariant;
-  fullWidth?: boolean;
-};
-
-const variantStyles: Record<ButtonVariant, React.CSSProperties> = {
+const variantStyles = {
   primary: {
     background: designTokens.colors.primary,
     color: designTokens.colors.text,
-    border: "none",
+    border: "none"
   },
   secondary: {
     background: designTokens.colors.surfaceAlt,
     color: designTokens.colors.text,
-    border: `1px solid ${designTokens.colors.border}`,
+    border: `1px solid ${designTokens.colors.border}`
   },
   ghost: {
     background: "transparent",
     color: designTokens.colors.textMuted,
-    border: "none",
+    border: "none"
   },
   danger: {
     background: designTokens.colors.danger,
     color: designTokens.colors.text,
-    border: "none",
-  },
+    border: "none"
+  }
 };
-
-export function Button({
+function Button({
   children,
   variant = "primary",
   fullWidth = false,
   style,
   disabled,
   ...props
-}: ButtonProps) {
+}) {
   const isDisabled = Boolean(disabled);
-
-  return (
-    <button
-      {...props}
-      disabled={isDisabled}
-      style={{
+  return /* @__PURE__ */ jsx(
+    "button",
+    {
+      ...props,
+      disabled: isDisabled,
+      style: {
         padding: `${designTokens.spacing.sm} ${designTokens.spacing.lg}`,
         borderRadius: designTokens.radii.md,
         cursor: isDisabled ? "not-allowed" : "pointer",
@@ -60,10 +50,12 @@ export function Button({
         opacity: isDisabled ? 0.6 : 1,
         filter: isDisabled ? "saturate(0.6)" : "none",
         ...variantStyles[variant],
-        ...style,
-      }}
-    >
-      {children}
-    </button>
+        ...style
+      },
+      children
+    }
   );
 }
+export {
+  Button
+};
