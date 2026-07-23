@@ -125,7 +125,9 @@ Create a `.env` file
 
 ```env
 GROQ_API_KEY=your_api_key
-
+JWT_SECRET_KEY=change_me_to_a_long_random_secret
+JWT_ADMIN_USERNAME=admin
+JWT_ADMIN_PASSWORD=change_me
 ```
 
 Run backend
@@ -142,7 +144,10 @@ Important settings:
 
 - `GROQ_API_KEY`
 - `APP_ENV`
-- `API_KEY`
+- `JWT_SECRET_KEY`
+- `JWT_ADMIN_USERNAME`
+- `JWT_ADMIN_PASSWORD`
+- `JWT_ACCESS_TOKEN_EXPIRE_MINUTES`
 - `LOG_LEVEL`
 - `MAX_UPLOAD_BYTES`
 - `DATABASE_URL`

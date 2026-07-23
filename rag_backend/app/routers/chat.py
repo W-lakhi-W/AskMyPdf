@@ -1,10 +1,10 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.api.auth import require_api_key
+from app.api.auth import CurrentUser, get_current_user
 from app.api.schemas import (
     ChatRequest,
     ChatResponse,
@@ -21,7 +21,7 @@ from app.repositories.chat import ChatRepository
 from app.services.chat import ChatService
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/chat", tags=["chat"], dependencies=[Depends(require_api_key)])
+router = APIRouter(prefix="/chat", tags=["chat"])
 
 
 def _session_summary(session: ChatSession) -> ChatSessionSummary:
@@ -58,25 +58,26 @@ def get_chat_service(db: Session = Depends(get_db)) -> ChatService:
 @router.post("/session", response_model=ChatSessionSummary, status_code=status.HTTP_201_CREATED)
 async def create_chat_session(
     request: ChatSessionCreate,
+    current_user: CurrentUser = Depends(get_current_user),
     service: ChatService = Depends(get_chat_service),
 ) -> ChatSessionSummary:
     try:
-        session = service.create_session(user_id=request.user_id, title=request.title)
+        session = service.create_session(user_id=current_user.user_id, title=request.title)
     except SQLAlchemyError as error:
-        logger.exception("chat_session_create_failed user_id=%s", request.user_id)
+        logger.exception("chat_session_create_failed user_id=%s", current_user.user_id)
         raise HTTPException(status_code=500, detail="Failed to create chat session.") from error
     return _session_summary(session)
 
 
 @router.get("/sessions", response_model=list[ChatSessionSummary])
 async def list_chat_sessions(
-    user_id: str = Query(default="default-user", min_length=1, max_length=128),
+    current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[ChatSessionSummary]:
     try:
-        sessions = ChatRepository(db).list_sessions(user_id)
+        sessions = ChatRepository(db).list_sessions(current_user.user_id)
     except SQLAlchemyError as error:
-        logger.exception("chat_session_list_failed user_id=%s", user_id)
+        logger.exception("chat_session_list_failed user_id=%s", current_user.user_id)
         raise HTTPException(status_code=500, detail="Failed to list chat sessions.") from error
     return [_session_summary(session) for session in sessions]
 
@@ -84,10 +85,10 @@ async def list_chat_sessions(
 @router.get("/session/{session_id}", response_model=ChatSessionDetail)
 async def get_chat_session(
     session_id: str,
-    user_id: str = Query(default="default-user", min_length=1, max_length=128),
+    current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ChatSessionDetail:
-    session = ChatRepository(db).get_session(user_id=user_id, session_id=session_id)
+    session = ChatRepository(db).get_session(user_id=current_user.user_id, session_id=session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Chat session not found.")
 
@@ -102,11 +103,12 @@ async def get_chat_session(
 async def rename_chat_session(
     session_id: str,
     request: ChatSessionRename,
+    current_user: CurrentUser = Depends(get_current_user),
     service: ChatService = Depends(get_chat_service),
 ) -> ChatSessionSummary:
     try:
         session = service.rename_session(
-            user_id=request.user_id,
+            user_id=current_user.user_id,
             session_id=session_id,
             title=request.title,
         )
@@ -116,7 +118,7 @@ async def rename_chat_session(
         logger.exception(
             "chat_session_rename_failed session_id=%s user_id=%s",
             session_id,
-            request.user_id,
+            current_user.user_id,
         )
         raise HTTPException(status_code=500, detail="Failed to rename chat session.") from error
     return _session_summary(session)
@@ -125,13 +127,20 @@ async def rename_chat_session(
 @router.delete("/session/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_chat_session(
     session_id: str,
-    user_id: str = Query(default="default-user", min_length=1, max_length=128),
+    current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> None:
     try:
-        deleted = ChatRepository(db).delete_session(user_id=user_id, session_id=session_id)
+        deleted = ChatRepository(db).delete_session(
+            user_id=current_user.user_id,
+            session_id=session_id,
+        )
     except SQLAlchemyError as error:
-        logger.exception("chat_session_delete_failed session_id=%s user_id=%s", session_id, user_id)
+        logger.exception(
+            "chat_session_delete_failed session_id=%s user_id=%s",
+            session_id,
+            current_user.user_id,
+        )
         raise HTTPException(status_code=500, detail="Failed to delete chat session.") from error
     if not deleted:
         raise HTTPException(status_code=404, detail="Chat session not found.")
@@ -140,21 +149,30 @@ async def delete_chat_session(
 @router.post("", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
+    current_user: CurrentUser = Depends(get_current_user),
     service: ChatService = Depends(get_chat_service),
 ) -> ChatResponse:
     try:
         result = service.answer(
-            user_id=request.user_id,
+            user_id=current_user.user_id,
             session_id=request.session_id,
             question=request.question,
         )
     except LookupError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except SQLAlchemyError as error:
-        logger.exception("chat_database_failed session_id=%s user_id=%s", request.session_id, request.user_id)
+        logger.exception(
+            "chat_database_failed session_id=%s user_id=%s",
+            request.session_id,
+            current_user.user_id,
+        )
         raise HTTPException(status_code=500, detail="Failed to save chat messages.") from error
     except Exception as error:
-        logger.exception("chat_failed session_id=%s user_id=%s", request.session_id, request.user_id)
+        logger.exception(
+            "chat_failed session_id=%s user_id=%s",
+            request.session_id,
+            current_user.user_id,
+        )
         raise HTTPException(status_code=500, detail="Chat request failed.") from error
 
     return ChatResponse(**result)

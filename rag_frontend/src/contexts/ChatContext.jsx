@@ -5,7 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useState
+  useState,
 } from "react";
 import {
   chat,
@@ -14,14 +14,15 @@ import {
   deleteChatSession,
   getChatSession,
   listChatSessions,
-  renameChatSession
+  renameChatSession,
 } from "@/lib/api";
+import { useAuthContext } from "@/contexts/AuthContext";
 import {
   CHAT_SESSION_CHANGED_EVENT,
   getStoredChatSessionId,
   notifyChatSessionsRefresh,
   removeStoredChatSessionId,
-  setStoredChatSessionId
+  setStoredChatSessionId,
 } from "@/lib/chatSessions";
 const ChatContext = createContext(null);
 function createId() {
@@ -35,27 +36,37 @@ function formatTimestamp(timestamp) {
   return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 function formatSources(response) {
-  const labels = (response.sources ?? []).map((source) => {
-    const name = source.source ?? "unknown source";
-    return source.page ? `${name}, page ${source.page}` : name;
-  }).filter(Boolean);
-  return labels.length ? `
+  const labels = (response.sources ?? [])
+    .map((source) => {
+      const name = source.source ?? "unknown source";
+      return source.page ? `${name}, page ${source.page}` : name;
+    })
+    .filter(Boolean);
+  return labels.length
+    ? `
 
-Sources: ${labels.join(", ")}` : "";
+Sources: ${labels.join(", ")}`
+    : "";
 }
 function getAnswer(response) {
-  return response.answer ?? response.results ?? response.response ?? "I couldn't find that information in the provided documents.";
+  return (
+    response.answer ??
+    response.results ??
+    response.response ??
+    "I couldn't find that information in the provided documents."
+  );
 }
 function toUiMessages(messages) {
   return messages.map((message) => ({
     id: String(message.id),
     role: message.role,
     content: message.content,
-    timestamp: formatTimestamp(message.timestamp)
+    timestamp: formatTimestamp(message.timestamp),
   }));
 }
 function ChatProvider({ children }) {
-  const userId = useMemo(() => DEFAULT_USER_ID, []);
+  const { userId: authUserId } = useAuthContext();
+  const userId = useMemo(() => authUserId ?? DEFAULT_USER_ID, [authUserId]);
   const [sessions, setSessions] = useState([]);
   const [selectedSessionId, setSelectedSessionId] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -64,8 +75,10 @@ function ChatProvider({ children }) {
   const [loadingSessions, setLoadingSessions] = useState(true);
   const [error, setError] = useState(null);
   const currentSession = useMemo(
-    () => sessions.find((session) => session.session_id === selectedSessionId) ?? null,
-    [selectedSessionId, sessions]
+    () =>
+      sessions.find((session) => session.session_id === selectedSessionId) ??
+      null,
+    [selectedSessionId, sessions],
   );
   const refreshSessions = useCallback(async () => {
     const loaded = await listChatSessions(userId);
@@ -86,11 +99,14 @@ function ChatProvider({ children }) {
         setLoadingSessions(false);
       }
     },
-    [userId]
+    [userId],
   );
   const createNewChat = useCallback(async () => {
     setError(null);
-    const session = await createChatSession({ user_id: userId, title: "New Chat" });
+    const session = await createChatSession({
+      user_id: userId,
+      title: "New Chat",
+    });
     setSessions((current) => [session, ...current]);
     setSelectedSessionId(session.session_id);
     setStoredChatSessionId(userId, session.session_id);
@@ -115,7 +131,10 @@ function ChatProvider({ children }) {
         const loadedSessions = await refreshSessions();
         if (!mounted) return;
         const storedSessionId = getStoredChatSessionId(userId);
-        const initialSession = loadedSessions.find((session) => session.session_id === storedSessionId) ?? loadedSessions[0];
+        const initialSession =
+          loadedSessions.find(
+            (session) => session.session_id === storedSessionId,
+          ) ?? loadedSessions[0];
         if (initialSession) {
           await selectSession(initialSession.session_id);
         } else {
@@ -123,7 +142,11 @@ function ChatProvider({ children }) {
         }
       } catch (err) {
         if (mounted) {
-          setError(err instanceof Error ? err.message : "Failed to load chat sessions.");
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Failed to load chat sessions.",
+          );
         }
       } finally {
         if (mounted) {
@@ -144,29 +167,41 @@ function ChatProvider({ children }) {
         return;
       }
       void selectSession(sessionId).catch((err) => {
-        setError(err instanceof Error ? err.message : "Failed to load chat session.");
+        setError(
+          err instanceof Error ? err.message : "Failed to load chat session.",
+        );
       });
     };
     window.addEventListener(CHAT_SESSION_CHANGED_EVENT, handleSessionChanged);
     return () => {
-      window.removeEventListener(CHAT_SESSION_CHANGED_EVENT, handleSessionChanged);
+      window.removeEventListener(
+        CHAT_SESSION_CHANGED_EVENT,
+        handleSessionChanged,
+      );
     };
   }, [selectSession, startNewChat]);
   const renameSession = useCallback(
     async (sessionId, title) => {
-      const renamed = await renameChatSession(sessionId, { user_id: userId, title });
-      setSessions(
-        (current) => current.map(
-          (session) => session.session_id === sessionId ? { ...session, ...renamed } : session
-        )
+      const renamed = await renameChatSession(sessionId, {
+        user_id: userId,
+        title,
+      });
+      setSessions((current) =>
+        current.map((session) =>
+          session.session_id === sessionId
+            ? { ...session, ...renamed }
+            : session,
+        ),
       );
     },
-    [userId]
+    [userId],
   );
   const removeSession = useCallback(
     async (sessionId) => {
       await deleteChatSession(sessionId, userId);
-      const remaining = sessions.filter((session) => session.session_id !== sessionId);
+      const remaining = sessions.filter(
+        (session) => session.session_id !== sessionId,
+      );
       setSessions(remaining);
       if (selectedSessionId === sessionId) {
         const next = remaining[0];
@@ -177,7 +212,7 @@ function ChatProvider({ children }) {
         }
       }
     },
-    [createNewChat, selectedSessionId, selectSession, sessions, userId]
+    [createNewChat, selectedSessionId, selectSession, sessions, userId],
   );
   const sendMessage = useCallback(
     async (content) => {
@@ -189,8 +224,8 @@ function ChatProvider({ children }) {
           id: createId(),
           role: "user",
           content: question,
-          timestamp: formatTimestamp()
-        }
+          timestamp: formatTimestamp(),
+        },
       ]);
       setDraft("");
       setLoading(true);
@@ -200,7 +235,7 @@ function ChatProvider({ children }) {
         if (!activeSessionId) {
           const session = await createChatSession({
             user_id: userId,
-            title: question.slice(0, 80) || "New Chat"
+            title: question.slice(0, 80) || "New Chat",
           });
           activeSessionId = session.session_id;
           setSessions((current) => [session, ...current]);
@@ -211,7 +246,7 @@ function ChatProvider({ children }) {
         const response = await chat({
           session_id: activeSessionId,
           user_id: userId,
-          question
+          question,
         });
         setMessages((current) => [
           ...current,
@@ -219,13 +254,14 @@ function ChatProvider({ children }) {
             id: createId(),
             role: "assistant",
             content: `${getAnswer(response)}${formatSources(response)}`,
-            timestamp: formatTimestamp()
-          }
+            timestamp: formatTimestamp(),
+          },
         ]);
         await refreshSessions();
         notifyChatSessionsRefresh();
       } catch (err) {
-        const message = err instanceof Error ? err.message : "The assistant could not reply.";
+        const message =
+          err instanceof Error ? err.message : "The assistant could not reply.";
         setError(message);
         setMessages((current) => [
           ...current,
@@ -234,14 +270,14 @@ function ChatProvider({ children }) {
             role: "assistant",
             content: `Error: ${message}`,
             timestamp: formatTimestamp(),
-            status: "error"
-          }
+            status: "error",
+          },
         ]);
       } finally {
         setLoading(false);
       }
     },
-    [loading, refreshSessions, selectedSessionId, userId]
+    [loading, refreshSessions, selectedSessionId, userId],
   );
   const value = useMemo(
     () => ({
@@ -259,7 +295,7 @@ function ChatProvider({ children }) {
       selectSession,
       sendMessage,
       removeSession,
-      renameSession
+      renameSession,
     }),
     [
       createNewChat,
@@ -275,8 +311,8 @@ function ChatProvider({ children }) {
       selectedSessionId,
       sendMessage,
       sessions,
-      userId
-    ]
+      userId,
+    ],
   );
   return /* @__PURE__ */ jsx(ChatContext.Provider, { value, children });
 }
@@ -287,7 +323,4 @@ function useChatContext() {
   }
   return context;
 }
-export {
-  ChatProvider,
-  useChatContext
-};
+export { ChatProvider, useChatContext };

@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from starlette.concurrency import run_in_threadpool
 
-from app.api.auth import require_api_key
+from app.api.auth import CurrentUser, get_current_user, router as auth_router
 from app.api.schemas import (
     HealthResponse,
     IngestResponse,
@@ -60,6 +60,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.include_router(auth_router)
 app.include_router(chat_router)
 
 app.add_middleware(
@@ -114,9 +115,8 @@ async def health() -> HealthResponse:
 )
 async def ingest_data(
     file: UploadFile = File(...),
-    user_id: str | None = Form(default=None),
     document_id: str | None = Form(default=None),
-    _: None = Depends(require_api_key),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> IngestResponse:
     _require_ready()
     try:
@@ -126,7 +126,7 @@ async def ingest_data(
             file_path,
             file_path.name,
             vector_store,
-            user_id,
+            current_user.user_id,
             document_id,
         )
     except ValueError as error:
@@ -146,7 +146,7 @@ async def ingest_data(
 )
 async def query_data(
     request: QueryRequest,
-    _: None = Depends(require_api_key),
+    _: CurrentUser = Depends(get_current_user),
 ) -> QueryResponse:
     _require_ready()
     try:
@@ -164,11 +164,15 @@ async def query_data(
 
 @app.get("/documents", response_model=IngestedPDFsResponse)
 async def list_documents(
-    _: None = Depends(require_api_key),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> IngestedPDFsResponse:
     _require_ready()
     try:
-        doc_names = await run_in_threadpool(get_unique_source_names, vector_store)
+        doc_names = await run_in_threadpool(
+            get_unique_source_names,
+            vector_store,
+            current_user.user_id,
+        )
     except Exception as error:
         logger.exception("Failed to retrieve documents")
         raise HTTPException(
@@ -189,13 +193,24 @@ async def list_documents(
 
 
 @app.get("/download/{filename}")
-async def download_pdf(filename: str, _: None = Depends(require_api_key)):
+async def download_pdf(
+    filename: str,
+    current_user: CurrentUser = Depends(get_current_user),
+):
     from app.core.config import DATA_DIR
     from pathlib import Path
 
     # Security: prevent directory traversal
     if ".." in filename or "/" in filename or "\\" in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
+
+    doc_names = await run_in_threadpool(
+        get_unique_source_names,
+        vector_store,
+        current_user.user_id,
+    )
+    if filename not in doc_names:
+        raise HTTPException(status_code=404, detail="File not found")
 
     file_path = Path(DATA_DIR) / "uploads" / filename
 
@@ -207,11 +222,15 @@ async def download_pdf(filename: str, _: None = Depends(require_api_key)):
 
 @app.get("/chunks", response_model=ChunksResponse)
 async def list_chunks(
-    _: None = Depends(require_api_key),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> ChunksResponse:
     _require_ready()
     try:
-        chunks = await run_in_threadpool(get_all_chunks, vector_store)
+        chunks = await run_in_threadpool(
+            get_all_chunks,
+            vector_store,
+            current_user.user_id,
+        )
     except Exception as error:
         logger.exception("Failed to retrieve chunks")
         raise HTTPException(
@@ -224,7 +243,7 @@ async def list_chunks(
 @app.delete("/documents/{filename}", response_model=DeleteResponse)
 async def delete_document(
     filename: str,
-    _: None = Depends(require_api_key),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> DeleteResponse:
     _require_ready()
 
@@ -234,7 +253,10 @@ async def delete_document(
 
     try:
         deleted_count = await run_in_threadpool(
-            delete_vectors_by_source_name, vector_store, filename
+            delete_vectors_by_source_name,
+            vector_store,
+            filename,
+            current_user.user_id,
         )
     except Exception as error:
         logger.exception("Document deletion failed")

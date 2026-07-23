@@ -35,18 +35,27 @@ def delete_vectors_by_source_hash(vector_store: Chroma, source_hash: str) -> int
     return len(matching_ids)
 
 
-def delete_vectors_by_source_name(vector_store: Chroma, source_name: str) -> int:
-    matching_ids = vector_store.get(where={"source_name": source_name}, include=[]).get(
-        "ids", []
-    )
+def delete_vectors_by_source_name(
+    vector_store: Chroma,
+    source_name: str,
+    user_id: str | None = None,
+) -> int:
+    where: dict[str, Any] = {"source_name": source_name}
+    if user_id is not None:
+        where["user_id"] = user_id
+
+    matching_ids = vector_store.get(where=where, include=[]).get("ids", [])
     if matching_ids:
         vector_store.delete(ids=matching_ids)
     return len(matching_ids)
 
 
-def get_unique_source_names(vector_store: Chroma) -> list[str]:
+def get_unique_source_names(
+    vector_store: Chroma, user_id: str | None = None
+) -> list[str]:
     try:
-        results = vector_store.get(include=["metadatas"])
+        where = {"user_id": user_id} if user_id is not None else None
+        results = vector_store.get(include=["metadatas"], where=where)
         metadatas = results.get("metadatas", [])
 
         if not metadatas:
@@ -63,9 +72,12 @@ def get_unique_source_names(vector_store: Chroma) -> list[str]:
         return []
 
 
-def get_all_chunks(vector_store: Chroma) -> list[dict[str, Any]]:
+def get_all_chunks(
+    vector_store: Chroma, user_id: str | None = None
+) -> list[dict[str, Any]]:
     try:
-        results = vector_store.get(include=["documents", "metadatas"])
+        where = {"user_id": user_id} if user_id is not None else None
+        results = vector_store.get(include=["documents", "metadatas"], where=where)
         documents = results.get("documents", [])
         metadatas = results.get("metadatas", [])
 

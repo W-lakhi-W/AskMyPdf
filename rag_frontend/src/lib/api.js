@@ -3,6 +3,8 @@ import axios from "axios";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api";
 const API_KEY = import.meta.env.VITE_API_KEY;
 const DEFAULT_USER_ID = import.meta.env.VITE_RAG_USER_ID ?? "default-user";
+const AUTH_TOKEN_STORAGE_KEY = "rag-auth-token";
+const AUTH_USER_STORAGE_KEY = "rag-auth-user";
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -12,6 +14,18 @@ const apiClient = axios.create({
 });
 
 apiClient.interceptors.request.use((config) => {
+  const token = getStoredAuthToken();
+  if (token) {
+    if (typeof config.headers?.set === "function") {
+      config.headers.set("Authorization", `Bearer ${token}`);
+    } else {
+      config.headers = {
+        ...config.headers,
+        Authorization: `Bearer ${token}`,
+      };
+    }
+  }
+
   if (API_KEY) {
     if (typeof config.headers?.set === "function") {
       config.headers.set("X-API-Key", API_KEY);
@@ -35,7 +49,9 @@ function getErrorMessage(error, fallback = "Request failed") {
         ? data
         : data?.detail || data?.message || error.message;
 
-    return status ? `${fallback}: ${status} ${detail}` : `${fallback}: ${detail}`;
+    return status
+      ? `${fallback}: ${status} ${detail}`
+      : `${fallback}: ${detail}`;
   }
 
   return error instanceof Error ? error.message : fallback;
@@ -50,19 +66,73 @@ async function request(config) {
   }
 }
 
+function getStoredAuthToken() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+}
+
+function getStoredUserId() {
+  if (typeof window === "undefined") {
+    return DEFAULT_USER_ID;
+  }
+  return window.localStorage.getItem(AUTH_USER_STORAGE_KEY) ?? DEFAULT_USER_ID;
+}
+
+function persistAuth(token, userId) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+  window.localStorage.setItem(AUTH_USER_STORAGE_KEY, userId);
+}
+
+function clearStoredAuth() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+  window.localStorage.removeItem(AUTH_USER_STORAGE_KEY);
+}
+
 function normalizeApiPath(path) {
   if (!path || path.startsWith("http://") || path.startsWith("https://")) {
     return path;
   }
 
-  if (
-    API_BASE_URL.startsWith("/") &&
-    path.startsWith(`${API_BASE_URL}/`)
-  ) {
+  if (API_BASE_URL.startsWith("/") && path.startsWith(`${API_BASE_URL}/`)) {
     return path.slice(API_BASE_URL.length);
   }
 
   return path.startsWith("/") ? path : `/${path}`;
+}
+
+async function loginUser(payload) {
+  return request({
+    url: "/auth/token",
+    method: "POST",
+    data: payload,
+  });
+}
+
+async function registerUser(payload) {
+  return request({
+    url: "/auth/register",
+    method: "POST",
+    data: payload,
+  });
+}
+
+async function getCurrentUser() {
+  return request({
+    url: "/auth/me",
+    method: "GET",
+  });
+}
+
+function logoutUser() {
+  clearStoredAuth();
 }
 
 async function fetchHealth() {
@@ -174,7 +244,11 @@ async function fetchDocumentBlob(source) {
     candidates.push(source);
   }
 
-  if (source && !source.startsWith("http://") && !source.startsWith("https://")) {
+  if (
+    source &&
+    !source.startsWith("http://") &&
+    !source.startsWith("https://")
+  ) {
     if (!source.startsWith("/")) {
       candidates.push(`/download/${encodeURIComponent(source)}`);
       candidates.push(`/download/${encodeURIComponent(source)}?download=true`);
@@ -197,7 +271,9 @@ async function fetchDocumentBlob(source) {
         return response.data;
       }
 
-      lastError = new Error(`View failed: ${response.status} ${response.statusText}`);
+      lastError = new Error(
+        `View failed: ${response.status} ${response.statusText}`,
+      );
 
       if (response.status !== 405 && response.status !== 404) {
         break;
@@ -217,15 +293,23 @@ async function fetchDocumentBlob(source) {
 export {
   DEFAULT_USER_ID,
   chat,
+  clearStoredAuth,
   createChatSession,
   deleteChatSession,
   deleteDocument,
   fetchDocumentBlob,
   fetchHealth,
   getChatSession,
+  getCurrentUser,
+  getStoredAuthToken,
+  getStoredUserId,
   ingestDocument,
   listChatSessions,
   listDocuments,
+  loginUser,
+  logoutUser,
+  persistAuth,
   queryDocuments,
+  registerUser,
   renameChatSession,
 };

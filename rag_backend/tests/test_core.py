@@ -1,10 +1,18 @@
 import io
 import unittest
+from datetime import timedelta
 
 from fastapi import UploadFile
+from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.api.auth import (
+    authenticate_user,
+    create_access_token,
+    decode_access_token,
+    register_user,
+)
 from app.database.session import Base
 from app.memory.manager import ConversationMemoryManager
 from app.repositories.chat import ChatRepository
@@ -13,7 +21,7 @@ from app.rag.answer_guard import (
     remove_unsupported_not_found_continuation,
 )
 from app.rag.service import chunk_id
-from app.rag.vectordb import delete_vectors_by_source_name
+from app.rag.vectordb import delete_vectors_by_source_name, get_unique_source_names
 from app.services.chat import ChatService
 from app.utils.file_upload import save_uploaded_file
 
@@ -32,6 +40,40 @@ class CoreTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             save_uploaded_file(upload)
+
+    def test_jwt_access_token_round_trips_user_id(self):
+        token = create_access_token("user-a")
+        payload = decode_access_token(token)
+
+        self.assertEqual(payload["sub"], "user-a")
+
+    def test_jwt_rejects_tampered_token(self):
+        token = create_access_token("user-a")
+        tampered_token = f"{token[:-1]}x"
+
+        with self.assertRaises(HTTPException):
+            decode_access_token(tampered_token)
+
+    def test_jwt_rejects_expired_token(self):
+        token = create_access_token("user-a", expires_delta=timedelta(seconds=-1))
+
+        with self.assertRaises(HTTPException):
+            decode_access_token(token)
+
+    def test_authenticate_user_checks_configured_credentials(self):
+        self.assertIsNotNone(authenticate_user("admin", "admin"))
+        self.assertIsNone(authenticate_user("admin", "wrong"))
+
+    def test_register_user_enables_db_authentication(self):
+        db = make_test_db()
+
+        created = register_user(db, "new-user", "secret-password")
+        authenticated = authenticate_user(db, "new-user", "secret-password")
+
+        self.assertIsNotNone(created)
+        self.assertEqual(created.username, "new-user")
+        self.assertIsNotNone(authenticated)
+        self.assertEqual(authenticated.user_id, "new-user")
 
     def test_delete_vectors_by_source_name_removes_matching_chunk_ids(self):
         class FakeVectorStore:
@@ -56,6 +98,27 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(store.deleted_ids, ["chunk-1", "chunk-2"])
         self.assertIsNone(store.deleted_where)
 
+    def test_get_unique_source_names_filters_by_authenticated_user(self):
+        class FakeVectorStore:
+            def get(self, where=None, include=None):
+                if where == {"user_id": "user-a"}:
+                    return {
+                        "metadatas": [
+                            {"source_name": "alice.pdf", "user_id": "user-a"},
+                            {"source_name": "alice.pdf", "user_id": "user-a"},
+                        ]
+                    }
+                return {
+                    "metadatas": [
+                        {"source_name": "alice.pdf", "user_id": "user-a"},
+                        {"source_name": "bob.pdf", "user_id": "user-b"},
+                    ]
+                }
+
+        store = FakeVectorStore()
+
+        self.assertEqual(get_unique_source_names(store, "user-a"), ["alice.pdf"])
+
     def test_chat_repository_isolates_sessions_by_user(self):
         db = make_test_db()
         repository = ChatRepository(db)
@@ -75,14 +138,18 @@ class CoreTests(unittest.TestCase):
         memory = ConversationMemoryManager(repository, max_messages=2)
         messages = memory.load_recent_messages("user-a", session.session_id)
 
-        self.assertEqual([message.content for message in messages], ["message 3", "message 4"])
+        self.assertEqual(
+            [message.content for message in messages], ["message 3", "message 4"]
+        )
 
     def test_chat_service_rewrites_retrieves_and_saves_messages(self):
         db = make_test_db()
         repository = ChatRepository(db)
         session = repository.create_session("user-a", "History chat")
         repository.add_message(session, "user", "Who is Napoleon?")
-        repository.add_message(session, "assistant", "Napoleon Bonaparte was Emperor of France.")
+        repository.add_message(
+            session, "assistant", "Napoleon Bonaparte was Emperor of France."
+        )
 
         llm = FakeLLM()
         vector_store = FakeVectorStore()
@@ -96,7 +163,9 @@ class CoreTests(unittest.TestCase):
         result = service.answer("user-a", session.session_id, "When was he born?")
         messages = repository.get_recent_messages("user-a", session.session_id, 10)
 
-        self.assertEqual(result["rewritten_question"], "When was Napoleon Bonaparte born?")
+        self.assertEqual(
+            result["rewritten_question"], "When was Napoleon Bonaparte born?"
+        )
         self.assertEqual(vector_store.last_query, "When was Napoleon Bonaparte born?")
         self.assertEqual(vector_store.search_kwargs, {"k": 5})
         self.assertEqual(result["answer"], "Napoleon was born in 1769.")
@@ -108,7 +177,9 @@ class CoreTests(unittest.TestCase):
         repository = ChatRepository(db)
         session = repository.create_session("user-a", "Memory chat")
         repository.add_message(session, "user", "What is FastAPI?")
-        repository.add_message(session, "assistant", "FastAPI is a Python web framework.")
+        repository.add_message(
+            session, "assistant", "FastAPI is a Python web framework."
+        )
 
         llm = RecordingLLM()
         service = ChatService(
@@ -156,7 +227,9 @@ class CoreTests(unittest.TestCase):
             llm=NoRewriteLLM(),
         )
 
-        service.answer("user-a", session.session_id, "Explain machine learning in simple terms")
+        service.answer(
+            "user-a", session.session_id, "Explain machine learning in simple terms"
+        )
         updated = repository.get_session("user-a", session.session_id)
 
         self.assertIsNotNone(updated)
@@ -197,7 +270,9 @@ class CoreTests(unittest.TestCase):
             llm=LeakyNotFoundLLM(),
         )
 
-        result = service.answer("user-a", session.session_id, "Tell me about Shivaji College")
+        result = service.answer(
+            "user-a", session.session_id, "Tell me about Shivaji College"
+        )
         messages = repository.get_recent_messages("user-a", session.session_id, 10)
 
         self.assertEqual(result["answer"], NOT_FOUND_ANSWER)

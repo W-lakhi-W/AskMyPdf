@@ -2,7 +2,7 @@ import hashlib
 from pathlib import Path
 
 from dotenv import load_dotenv
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,6 +27,17 @@ class Settings(BaseSettings):
 
     groq_api_key: str = Field(default="", alias="GROQ_API_KEY")
     api_key: str = Field(default="", alias="API_KEY")
+    jwt_secret_key: SecretStr | None = Field(default=None, alias="JWT_SECRET_KEY")
+    jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
+    jwt_access_token_expire_minutes: int = Field(
+        default=60,
+        alias="JWT_ACCESS_TOKEN_EXPIRE_MINUTES",
+    )
+    jwt_admin_username: str = Field(default="admin", alias="JWT_ADMIN_USERNAME")
+    jwt_admin_password: SecretStr = Field(
+        default=SecretStr("admin"),
+        alias="JWT_ADMIN_PASSWORD",
+    )
 
     pdf_path: Path = DOCUMENTS_DIR / "sample.pdf"
     chroma_path: Path = VECTORSTORES_DIR / "chroma_db"

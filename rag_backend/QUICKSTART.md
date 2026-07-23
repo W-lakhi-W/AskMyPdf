@@ -14,6 +14,9 @@ Create `.env` from `.env.example` and set:
 
 ```env
 GROQ_API_KEY=your_api_key_here
+JWT_SECRET_KEY=change_me_to_a_long_random_secret
+JWT_ADMIN_USERNAME=admin
+JWT_ADMIN_PASSWORD=change_me
 ```
 
 ## 3. Add a PDF
@@ -44,5 +47,7 @@ uvicorn app.api.main:app --reload
 
 Then use:
 
+- `POST /auth/token` with JSON: `{"username": "admin", "password": "change_me"}`
+- Send `Authorization: Bearer <access_token>` to protected endpoints
 - `POST /ingest` with a PDF file field named `file`
 - `POST /query` with JSON: `{"query": "your question"}`

@@ -64,13 +64,27 @@ class DeleteResponse(BaseModel):
     filename: str
 
 
+class TokenRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=128)
+    password: str = Field(min_length=1, max_length=256)
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    user_id: str
+
+
+class AuthenticatedUser(BaseModel):
+    user_id: str
+
+
 class ChatSessionCreate(BaseModel):
-    user_id: str = Field(default="default-user", min_length=1, max_length=128)
     title: str | None = Field(default=None, max_length=200)
 
 
 class ChatSessionRename(BaseModel):
-    user_id: str = Field(default="default-user", min_length=1, max_length=128)
     title: str = Field(min_length=1, max_length=200)
 
 
@@ -96,7 +110,6 @@ class ChatSessionDetail(ChatSessionSummary):
 
 class ChatRequest(BaseModel):
     session_id: str = Field(min_length=1)
-    user_id: str = Field(default="default-user", min_length=1, max_length=128)
     question: str = Field(min_length=1, max_length=2000)
 
 
